@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Essence Journal - Transform Your Thoughts Into Art</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes blob {
+            0% { transform: translate(0px, 0px) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+            100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob { animation: blob 7s infinite; }
+        .animation-delay-2000 { animation-delay: 2s; }
+        .animation-delay-4000 { animation-delay: 4s; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+    <div id="app"></div>
+    
+    <script>
+        // API Configuration - IMPORTANT: Add your Gemini API key here
+        const API_KEY = 'YOUR_GEMINI_API_KEY_HERE';
+        const GEMINI_MODEL = 'gemini-2.0-flash-exp';
+        const IMAGEN_MODEL = 'imagen-3.0-generate-001';
+        
+        // Prompts array
+        const PROMPTS = [
+            "What is occupying your mind the most today?",
+            "Describe a moment recently where you felt truly yourself.",
+            "What is a hurdle you are currently facing?",
+            "Write about a dream that has stuck with you.",
+            "If your current mood was a landscape, what would it look like?",
+            "If your soul had a texture right now (rough, glass, velvet, sand), what would it be?",
+            "What is a color you feel connected to right now, and why?",
+            "Describe a silence you experienced recently.",
+            "What does 'home' feel like to you, beyond a physical place?",
+            "If you could send a message to your past self, what image would convey it without words?",
+            "What is a fear you are learning to befriend?",
+            "Describe the rhythm or tempo of your life this week.",
+            "What is something you are waiting for?",
+            "If you were a building, what kind of architecture would you be today?",
+            "What feels heavy? What feels light?",
+            "Describe the weather inside your chest.",
+            "If you could bottle a specific feeling you've had recently, what would the label say?",
+            "What is a door you are hesitant to open?"
+        ];
+        
+        // State
+        let state = {
+            step: 'write',
+            entryText: '',
+            analysis: null,
+            imageUrl: null,
+            loadingMessage: 'Listening to your thoughts...',
+            themeMode: 'dark',
+            currentPrompt: PROMPTS[Math.floor(Math.random() * PROMPTS.length)]
+        };
+
+        
+        // API Functions
+        async function analyzeJournalEntry(text) {
+            const systemPrompt = `
+                You are an empathetic AI artist and philosopher. 
+                Analyze the user's journal entry. 
+                1. Identify the core emotion/sentiment.
+                2. Create a 'Visual Metaphor' prompt for an image generator. 
+                   CRITICAL: Base this heavily on the specific language, metaphors, or sensory details the user used. 
+                   If they mentioned 'drowning', visualize water. If they mentioned 'heavy', visualize weight/stone.
+                   Make it abstract, artistic, and deep. Use style descriptors like 'ethereal', 'oil painting', 'minimalist', 'cinematic lighting', 'surrealist'.
+                3. Write a short, single-sentence 'Insight' or philosophical reflection based on the entry.
+                4. Suggest a color palette (3 hex codes) that matches the mood.
+                
+                Return valid JSON only: { "sentiment": "...", "imagePrompt": "...", "insight": "...", "colorPalette": ["#...", "#...", "#..."] }
+            `;
+            
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: text }] }],
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: { responseMimeType: "application/json" }
+                    })
+                });
+                
+                if (!response.ok) throw new Error('Analysis failed');
+                const data = await response.json();
+                const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                return JSON.parse(resultText);
+            } catch (error) {
+                console.error('Text Gen Error', error);
+                throw error;
+            }
+        }
+        
+        async function generateVisual(prompt) {
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${IMAGEN_MODEL}:predict?key=${API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        instances: [{ prompt: prompt }],
+                        parameters: { sampleCount: 1, aspectRatio: "1:1" }
+                    })
+                });
+                
+                if (!response.ok) throw new Error('Image generation failed');
+                const data = await response.json();
+                const base64Image = data.predictions?.[0]?.bytesBase64Encoded;
+                return `data:image/png;base64,${base64Image}`;
+            } catch (error) {
+                console.error('Image Gen Error', error);
+                throw error;
+            }
+        }
+
+        
+        // Event Handlers
+        async function handleProcess() {
+            if (!state.entryText.trim()) return;
+            state.step = 'processing';
+            render();
+            
+            try {
+                state.loadingMessage = 'Distilling the essence...';
+                render();
+                const analysisResult = await analyzeJournalEntry(state.entryText);
+                state.analysis = analysisResult;
+                
+                state.loadingMessage = 'Painting your inner world...';
+                render();
+                const image = await generateVisual(analysisResult.imagePrompt);
+                state.imageUrl = image;
+                
+                state.step = 'view';
+                render();
+            } catch (e) {
+                alert('Something went wrong connecting to the creative ether. Please try again.');
+                state.step = 'write';
+                render();
+            }
+        }
+        
+        function handleReset() {
+            state.entryText = '';
+            state.analysis = null;
+            state.imageUrl = null;
+            state.step = 'write';
+            state.currentPrompt = PROMPTS[Math.floor(Math.random() * PROMPTS.length)];
+            render();
+        }
+        
+        function shufflePrompt() {
+            state.currentPrompt = PROMPTS[Math.floor(Math.random() * PROMPTS.length)];
+            render();
+        }
+        
+        function shareInsight() {
+            if (!state.analysis) return;
+            const textToShare = `My Essence Insight: "${state.analysis.insight}"`;
+            const textArea = document.createElement('textarea');
+            textArea.value = textToShare;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                alert('Insight copied to clipboard!');
+            } catch (err) {
+                console.error('Unable to copy', err);
+                alert('Failed to copy to clipboard.');
+            }
+            document.body.removeChild(textArea);
+        }
+
+        
+        // Render Function
+        function render() {
+            const app = document.getElementById('app');
+            const accentGradient = state.analysis?.colorPalette 
+                ? `linear-gradient(135deg, ${state.analysis.colorPalette[0]}40, ${state.analysis.colorPalette[1]}40)` 
+                : 'linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2))';
+            
+            app.innerHTML = `
+                <div class="min-h-screen w-full transition-colors duration-500 font-sans selection:bg-indigo-500/30 bg-slate-950 text-slate-100 flex flex-col">
+                    <!-- Header -->
+                    <header class="p-6 flex justify-between items-center z-10">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                            </svg>
+                            <h1 class="text-xl font-medium tracking-wide">ESSENCE</h1>
+                        </div>
+                    </header>
+                    
+                    <!-- Main Content -->
+                    <main class="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+                        <!-- Background Glow -->
+                        <div class="absolute inset-0 pointer-events-none opacity-50 transition-all duration-[2000ms]" style="background: ${accentGradient}"></div>
+                        
+                        ${state.step === 'write' ? renderWriteView() : ''}
+                        ${state.step === 'processing' ? renderProcessingView() : ''}
+                        ${state.step === 'view' ? renderViewView() : ''}
+                    </main>
+                </div>
+            `;
+            
+            // Attach event listeners after rendering
+            if (state.step === 'write') {
+                const textarea = document.getElementById('entryTextarea');
+                if (textarea) {
+                    textarea.value = state.entryText;
+                    textarea.addEventListener('input', (e) => {
+                        state.entryText = e.target.value;
+                    });
+                }
+                
+                const visualizeBtn = document.getElementById('visualizeBtn');
+                if (visualizeBtn) {
+                    visualizeBtn.addEventListener('click', handleProcess);
+                }
+                
+                const shuffleBtn = document.getElementById('shuffleBtn');
+                if (shuffleBtn) {
+                    shuffleBtn.addEventListener('click', shufflePrompt);
+                }
+            }
+            
+            if (state.step === 'view') {
+                const resetBtn = document.getElementById('resetBtn');
+                if (resetBtn) {
+                    resetBtn.addEventListener('click', handleReset);
+                }
+                
+                const shareBtn = document.getElementById('shareBtn');
+                if (shareBtn) {
+                    shareBtn.addEventListener('click', shareInsight);
+                }
+            }
+        }
+
+        
+        // View Rendering Functions
+        function renderWriteView() {
+            return `
+                <div class="w-full max-w-2xl relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-700">
+                    <div class="backdrop-blur-xl border border-slate-700/50 rounded-3xl p-8 shadow-2xl bg-slate-900/50">
+                        <div class="mb-6 opacity-70 flex items-center gap-2 text-sm uppercase tracking-widest font-semibold">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                            <span>Journal Entry</span>
+                        </div>
+                        
+                        <div class="min-h-[80px] flex items-center mb-8">
+                            <h2 class="text-2xl md:text-3xl font-light leading-snug animate-in fade-in slide-in-from-right-2 duration-500">
+                                ${state.currentPrompt}
+                            </h2>
+                        </div>
+                        
+                        <textarea
+                            id="entryTextarea"
+                            placeholder="Let it flow..."
+                            class="w-full h-48 bg-transparent resize-none outline-none text-lg md:text-xl leading-relaxed placeholder:opacity-30 placeholder:text-slate-400"
+                            autofocus
+                        ></textarea>
+
+                        <div class="mt-8 flex justify-between items-center">
+                            <button 
+                                id="shuffleBtn"
+                                class="group opacity-50 hover:opacity-100 transition-all flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/5"
+                            >
+                                <svg class="w-4 h-4 transition-transform group-hover:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg> 
+                                <span class="text-xs uppercase tracking-wide">Shuffle Prompt</span>
+                            </button>
+
+                            <button
+                                id="visualizeBtn"
+                                class="px-8 py-3 rounded-full font-medium transition-all duration-300 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white hover:scale-105 shadow-lg shadow-indigo-500/25"
+                            >
+                                Visualize
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        
+        function renderProcessingView() {
+            return `
+                <div class="flex flex-col items-center justify-center z-10 text-center animate-in fade-in duration-500">
+                    <div class="relative">
+                        <div class="absolute inset-0 bg-indigo-500 blur-xl opacity-20 animate-pulse"></div>
+                        <svg class="w-16 h-16 text-indigo-400 animate-spin relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </div>
+                    <h3 class="mt-8 text-xl font-light tracking-wide animate-pulse">${state.loadingMessage}</h3>
+                    <p class="mt-2 text-sm opacity-50">Crafting your unique visual aid</p>
+                </div>
+            `;
+        }
+        
+        function renderViewView() {
+            if (!state.analysis || !state.imageUrl) return '';
+            
+            const truncatedText = state.entryText.length > 100 ? state.entryText.slice(0, 100) + '...' : state.entryText;
+            const today = new Date().toLocaleDateString();
+            
+            return `
+                <div class="w-full max-w-4xl relative z-10 animate-in zoom-in-95 duration-700">
+                    <div class="backdrop-blur-2xl border border-slate-700/50 rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row bg-slate-900/50">
+                        <!-- Image Section -->
+                        <div class="md:w-1/2 bg-black/5 relative group">
+                            <img 
+                                src="${state.imageUrl}" 
+                                alt="AI Generated Visual Aid" 
+                                class="w-full h-full object-cover min-h-[400px]"
+                            />
+                            <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-6">
+                                <p class="text-white/90 text-sm font-light italic">
+                                    "${state.analysis.imagePrompt.slice(0, 150)}..."
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Content Section -->
+                        <div class="md:w-1/2 p-8 md:p-12 flex flex-col justify-center">
+                            <div class="mb-auto">
+                                <div class="flex items-center gap-2 mb-6">
+                                    <span class="px-3 py-1 rounded-full text-xs font-medium uppercase tracking-wider bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                        ${state.analysis.sentiment}
+                                    </span>
+                                    <span class="text-xs opacity-40 uppercase tracking-widest">${today}</span>
+                                </div>
+
+                                <h2 class="text-3xl md:text-4xl font-light mb-6 leading-tight">
+                                    "${state.analysis.insight}"
+                                </h2>
+                                
+                                <div class="prose prose-invert opacity-70 text-sm md:text-base leading-relaxed">
+                                    <p class="italic border-l-2 border-indigo-500/30 pl-4 py-1">
+                                        You wrote: "${truncatedText}"
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="mt-12 flex items-center gap-4 border-t pt-8 border-current border-opacity-10">
+                                <button 
+                                    id="resetBtn"
+                                    class="flex-1 py-3 rounded-xl border border-current border-opacity-20 hover:bg-current hover:bg-opacity-5 transition-all text-sm font-medium flex items-center justify-center gap-2"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                    </svg>
+                                    Journal Again
+                                </button>
+                                <button 
+                                    id="shareBtn"
+                                    class="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-sm font-medium flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                    </svg>
+                                    Share Insight
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Initialize
+        render();
+    </script>
+</body>
+</html>
